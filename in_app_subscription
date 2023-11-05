@@ -1,0 +1,163 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:in_app_purchase_storekit/store_kit_wrappers.dart';
+import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+
+
+class InAppSubscription{
+
+
+  final InAppPurchase _inAppPurchase = InAppPurchase.instance;
+  late StreamSubscription<dynamic> subscription;
+  List<ProductDetails>? products;
+  List<PurchaseDetails> _purchases = [];
+
+
+  //Initialize the subscription first
+  void listenSubscription(BuildContext context) {
+    final Stream purchaseUpdated = InAppPurchase.instance.purchaseStream;
+    subscription = purchaseUpdated.listen((purchaseDetailsList) {
+      _listenToPurchaseUpdated(purchaseDetailsList, context);
+    }, onDone: () {
+      subscription.cancel();
+    }, onError: (error) {
+      print('IN-APP-PURCHASE-ERROR');
+    });
+    fetchSubscription();
+  }
+
+  //Check the pending subscription and complete the purchase
+  void _listenToPurchaseUpdated(
+      List<PurchaseDetails> purchaseDetailsList, BuildContext context) {
+    purchaseDetailsList.forEach((PurchaseDetails purchaseDetails) async {
+      if (purchaseDetails.status == PurchaseStatus.pending) {
+        completePurchase(purchaseDetailsList, context);
+      } else {
+        if (purchaseDetails.status == PurchaseStatus.error) {
+        } else if (purchaseDetails.status == PurchaseStatus.purchased ||
+            purchaseDetails.status == PurchaseStatus.restored) {
+          showDialog(
+              context: context,
+              builder: (child) {
+                return const PaymentDoneDialog();
+              });
+          subscriptionPurchased(context);
+        }
+        if (purchaseDetails.pendingCompletePurchase) {
+          if (purchaseDetailsList.isNotEmpty) {
+            var purchaseList = purchaseDetailsList
+                .where((element) => element.productID == selectedProductID)
+                .toList();
+            PurchaseDetails purchaseDetails = purchaseList[0];
+            await InAppPurchase.instance.completePurchase(purchaseDetails);
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> subscriptionPurchased(BuildContext context) async {
+   print('Purchased Completed Successfully');
+  }
+
+  //Fetch the subscription plans from play & app store
+  Future<void> fetchSubscription() async {
+    final bool available = await InAppPurchase.instance.isAvailable();
+    if (!available) {
+      products = [];
+      update();
+      return;
+    }
+    if (Platform.isIOS) {
+      var iosPlatformAddition = _inAppPurchase
+          .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
+      await iosPlatformAddition.setDelegate(ExamplePaymentQueueDelegate());
+    }
+    Set<String> kIds =
+    <String>{'com.example.monthly', 'com.example.annual'}.toSet();
+    final ProductDetailsResponse response =
+    await InAppPurchase.instance.queryProductDetails(kIds);
+    if (response.notFoundIDs.isNotEmpty) {
+      print('IN-APP-PURCHASE-NO-PRODUCTS-FOUND');
+    }
+    products = response.productDetails;
+  }
+
+  //Complete the purchase
+  void completePurchase(
+      List<PurchaseDetails> purchaseDetailsList, BuildContext context) {
+    if (purchaseDetailsList.isNotEmpty) {
+      var purchaseList = purchaseDetailsList
+          .where((element) => element.productID == selectedProductID)
+          .toList();
+      PurchaseDetails purchaseDetails = purchaseList[0];
+      _inAppPurchase.completePurchase(purchaseDetails);
+      showDialog(
+          context: context,
+          builder: (child) {
+            return const PaymentDoneDialog();
+          });
+      subscriptionPurchased(context);
+    }
+  }
+
+  //Purchase the selected plan (Yearly/Monthly)
+  Future<void> purchasePlan() async {
+    var selectedProduct =
+    products!.firstWhere((element) => element.id == selectedProductID);
+    final PurchaseParam purchaseParam = PurchaseParam(
+        productDetails: selectedProduct, applicationUserName: 'Test');
+    bool isPurchased = await InAppPurchase.instance
+        .buyNonConsumable(purchaseParam: purchaseParam);
+    if (isPurchased) {
+      print('IN-APP-PURCHASE-PURCHASED');
+    } else {
+      print('IN-APP-PURCHASE-PURCHASED-ERROR');
+    }
+  }
+
+  //Check and restore previous purchased subscription
+  void checkSubscriptionDetails() async {
+    fetchSubscription();
+    final purchasedUpdated = InAppPurchase.instance.purchaseStream;
+    StreamSubscription<List<PurchaseDetails>> _subscription =
+    purchasedUpdated.listen(_onPurchasedUpdated);
+    await InAppPurchase.instance.restorePurchases();
+    Future.delayed(const Duration(seconds: 3), () {
+      _subscription.cancel();
+    });
+  }
+
+  //After checking previous purchase, update the subscription
+  void _onPurchasedUpdated(List<PurchaseDetails> purchaseDetailsList) {
+    print("IN-APP-RESTORE-PURCHASE-DETAILS==>${purchaseDetailsList}");
+    _purchases = purchaseDetailsList;
+    if (purchaseDetailsList.isEmpty) {
+      print('No Previous Subscription Found');
+    }
+    purchaseDetailsList.forEach((purchaseDetails) async {
+      print("IN-APP-RESTORE-PURCHASE-STATUS==>${purchaseDetails.status}");
+      if (purchaseDetails.status == PurchaseStatus.restored) {
+        print('Previous Subscription Found');
+        print("IN-APP-RESTORE-PURCHASE-PRODUCT-ID==>${purchaseDetails.productID}");
+        if (purchaseDetails.pendingCompletePurchase) {
+          await InAppPurchase.instance.completePurchase(purchaseDetails);
+        }
+      }
+    });
+  }
+
+}
+
+class ExamplePaymentQueueDelegate implements SKPaymentQueueDelegateWrapper {
+  @override
+  bool shouldContinueTransaction(SKPaymentTransactionWrapper transaction, SKStorefrontWrapper storefront) {
+    return true;
+  }
+
+  @override
+  bool shouldShowPriceConsent() {
+    return false;
+  }
+}

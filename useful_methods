@@ -1,0 +1,42 @@
+////////////////////////////////===>FOR RESEND OTP TIMER<===//////////////////////////////////////
+
+ Timer? countdownTimer;
+ Duration myDuration=const Duration(seconds: 25);
+
+//call in init method
+
+ void startTimer() {
+    countdownTimer =
+        Timer.periodic(const Duration(seconds: 1), (_) => setCountDown());
+
+  }
+
+  @override
+  void dispose() {
+    countdownTimer!.cancel();
+    super.dispose();
+  }
+
+void setCountDown() {
+    const reduceSecondsBy = 1;
+    setState(() {
+      final seconds = myDuration.inSeconds - reduceSecondsBy;
+      if (seconds < 0) {
+        countdownTimer!.cancel();
+      } else {
+        myDuration = Duration(seconds: seconds);
+      }
+    });
+  }
+
+//call in build method
+
+String strDigits(int n) => n.toString().padLeft(2, '0');
+final minutes = strDigits(myDuration.inMinutes.remainder(60));
+final seconds = strDigits(myDuration.inSeconds.remainder(60));
+
+//call in resend api method
+
+myDuration = const Duration(seconds: 25);
+startTimer();
+

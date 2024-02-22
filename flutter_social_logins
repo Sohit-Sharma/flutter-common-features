@@ -1,0 +1,141 @@
+///////////////////////===>GOOGLE LOGIN<===///////////////////////////
+
+
+final FirebaseAuth _auth=FirebaseAuth.instance;
+final GoogleSignIn _googleSignIn=GoogleSignIn();
+
+Future<User?> googleSignIn() async {
+    try{
+      GoogleSignInAccount? googleSignInAccount=await _googleSignIn.signIn();
+      GoogleSignInAuthentication googleSignInAuthentication=await googleSignInAccount!.authentication;
+      AuthCredential authCredential=GoogleAuthProvider.credential(
+        accessToken: googleSignInAuthentication.accessToken,
+        idToken: googleSignInAuthentication.idToken,
+      );
+      UserCredential userCredential=await _auth.signInWithCredential(authCredential);
+      User? user=userCredential.user;
+      return user;
+    }catch(e){
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Sign In failed ${e.toString()}")));
+    }
+    return null;
+}
+
+User? user =await googleSignIn();
+if(user!=null){
+ Navigator.of(context).push(MaterialPageRoute(builder: (context)=>const HomePage()));
+}else{
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Sign In failed")));
+}
+
+
+
+////////////////////////===>GOOGLE LOGIN WITH CALENDER API<===/////////////////////////////
+
+
+  Future<void> googleLogin() async {
+    controller.mLoading.value = true;
+    GoogleSignIn googleSignIn = GoogleSignIn(
+      scopes: <String>[
+        'email',
+        'https://www.googleapis.com/auth/contacts.readonly',
+        cal.CalendarApi.calendarScope,
+        cal.CalendarApi.calendarEventsScope,
+      ],
+    );
+    late final GoogleSignInAuthentication googleAuth;
+    late final GoogleSignInAccount? account;
+    try {
+      account = await googleSignIn.signIn();
+      if (account == null) {
+        controller.mLoading.value = false;
+        AppToast.showMessage(context, 'Something went wrong');
+      } else {
+        final GoogleAPIClient httpClient =
+            GoogleAPIClient(await account.authHeaders);
+        CalendarClient.calendar = cal.CalendarApi(httpClient);
+        googleAuth = await account.authentication;
+        final auth.AuthCredential authCredential =
+            auth.GoogleAuthProvider.credential(
+                idToken: googleAuth.idToken,
+                accessToken: googleAuth.accessToken);
+        final firebaseAuth = auth.FirebaseAuth.instance;
+        final auth.UserCredential userCredential =
+            await firebaseAuth.signInWithCredential(authCredential);
+        auth.User firebaseUser = userCredential.user!;
+        firebaseUser.updateDisplayName(account.displayName);
+        firebaseUser.updateEmail(account.email);
+        socialLogin(account.id, account.email, account.displayName, 'google');
+      }
+    } catch (error) {
+      controller.mLoading.value = false;
+      AppToast.showMessage(context, '$error');
+    }
+  }
+
+
+
+//////////////////////////===>FACEBOOK LOGIN<===//////////////////////////////////
+
+
+  Future<void> facebookLogin() async {
+    controller.mLoading.value = true;
+    var result = await FacebookAuth.instance.login(
+      permissions: ["public_profile", "email"],
+    );
+    if (result.status == LoginStatus.success) {
+      final requestData = await FacebookAuth.instance.getUserData(
+        fields: 'email,name',
+      );
+      var fbData = FacebookDataModel.fromJson(requestData);
+      final OAuthCredential credential =
+          FacebookAuthProvider.credential(result.accessToken!.token);
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      final firebaseAuth = auth.FirebaseAuth.instance;
+      final auth.UserCredential userCredential =
+          await firebaseAuth.signInWithCredential(credential);
+      auth.User firebaseUser = userCredential.user!;
+      firebaseUser.updateDisplayName(fbData.name);
+      firebaseUser.updateEmail(fbData.email!);
+      print('SUCCESS=>${fbData.id} ${fbData.email} ${fbData.name}');
+      socialLogin(fbData.id.toString(), fbData.email.toString(), fbData.name,
+          'facebook');
+    } else {
+      controller.mLoading.value = false;
+      AppToast.showMessage(context, '${result.message}');
+    }
+  }
+
+
+//////////////////////////===>APPLE LOGIN<===//////////////////////////////////
+
+void signInWithApple(BuildContext context) async {
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+          scopes: [
+            AppleIDAuthorizationScopes.email,
+            AppleIDAuthorizationScopes.fullName,
+          ],
+          webAuthenticationOptions: WebAuthenticationOptions(
+            clientId: 'vhn-my-experience-app',
+            redirectUri: Uri.parse(
+              'https://vhn-my-experience-app.firebaseapp.com/__/auth/handler',
+            ),
+          ));
+      final oAuthProvider = OAuthProvider('apple.com');
+      final appleIdCredentials = oAuthProvider.credential(
+        idToken: credential.identityToken,
+        accessToken: credential.authorizationCode,
+      );
+      final firebaseAuth = FirebaseAuth.instance;
+      final UserCredential userCredential =
+          await firebaseAuth.signInWithCredential(appleIdCredentials);
+      final firebaseUser = userCredential.user!;
+      if (kDebugMode) {
+        print("apple hello ${credential.identityToken.toString()}");
+      }     
+    } catch (e) {
+      if (kDebugMode) print(e.toString());
+    }
+}
+
